@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Sepulcher",
+      "hasCanvas": false,
+      "bodyTextLen": 136,
+      "bodyTextHash": "034c7a0b85f0e178d1181f4457d79a13740d4e95dd234b573449e5ed0b321e71",
+      "bodyTextPrefix": "Sepulcher A roguelike deckbuilder. Descend the sealed tomb, play",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Sepulcher",
+      "hasCanvas": false,
+      "bodyTextLen": 136,
+      "bodyTextHash": "034c7a0b85f0e178d1181f4457d79a13740d4e95dd234b573449e5ed0b321e71",
+      "bodyTextPrefix": "Sepulcher A roguelike deckbuilder. Descend the sealed tomb, play",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
