@@ -37,7 +37,7 @@ export function CardView({
       disabled={!onClick}
       className={cn(
         "relative flex flex-col text-left border transition-transform duration-(--motion-fast) ease-(--ease-out)",
-        "bg-surface border-border text-fg shrink-0",
+        "bg-surface border-accent/35 text-fg shrink-0",
         compact
           ? "w-[5.5rem] h-[8.25rem] rounded-sm p-1.5"
           : reward
@@ -47,6 +47,7 @@ export function CardView({
         selected && "ring-2 ring-accent border-accent -translate-y-2 z-10",
         (dimmed || !playable) && "opacity-45",
         d.type === "power" && "border-accent/35",
+        d.neutral && "border-muted bg-elevated/80",
         d.type === "status" && "opacity-70",
       )}
     >
@@ -79,7 +80,9 @@ export function CardView({
         {cardText(card, live)}
       </p>
       <div className="mt-auto pt-1 flex items-center justify-between">
-        <span className="text-[9px] uppercase tracking-[0.14em] text-subtle">{TYPE_LABEL[d.type]}</span>
+        <span className="text-[9px] uppercase tracking-[0.14em] text-subtle">
+          {d.neutral ? "Nameless" : TYPE_LABEL[d.type]}
+        </span>
         {price !== undefined && <span className="text-[10px] tabular-nums text-fg">{price}g</span>}
       </div>
     </button>
@@ -114,6 +117,19 @@ function Sigil({ id, className }: { id: string; className?: string }) {
         <svg {...common}>
           <circle cx="24" cy="24" r="10" />
           <path d="M24 8 V16 M24 32 V40 M8 24 H16 M32 24 H40" />
+        </svg>
+      );
+    case "dirge":
+      return (
+        <svg {...common}>
+          <path d="M16 38 V14 L32 10 V34" />
+          <path d="M16 22 H32" />
+        </svg>
+      );
+    case "fade":
+      return (
+        <svg {...common} strokeDasharray="3 3">
+          <path d="M12 36 C12 20 20 12 24 8 C28 12 36 20 36 36" />
         </svg>
       );
     case "cleave":
@@ -293,6 +309,352 @@ function Sigil({ id, className }: { id: string; className?: string }) {
       return (
         <svg {...common}>
           <path d="M16 40 H32 L28 22 C32 18 30 10 24 8 C18 10 16 18 20 22 Z" />
+        </svg>
+      );
+    case "ember":
+      return (
+        <svg {...common}>
+          <path d="M24 8 C18 20 16 28 20 38 H28 C32 28 30 20 24 8 Z" />
+        </svg>
+      );
+    case "rime":
+      return (
+        <svg {...common}>
+          <path d="M24 6 V42 M10 16 L38 32 M38 16 L10 32" />
+        </svg>
+      );
+    case "spark":
+      return (
+        <svg {...common}>
+          <path d="M28 6 L14 26 H24 L20 42 L36 22 H26 Z" />
+        </svg>
+      );
+    case "gloom":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="12" />
+          <circle cx="24" cy="24" r="4" />
+        </svg>
+      );
+    case "unleash":
+      return (
+        <svg {...common}>
+          <path d="M8 24 H40 M24 8 V40" />
+          <path d="M14 14 L34 34 M34 14 L14 34" />
+        </svg>
+      );
+    case "pulse":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="6" />
+          <circle cx="24" cy="24" r="14" />
+        </svg>
+      );
+    case "feed":
+      return (
+        <svg {...common}>
+          <path d="M24 40 L10 22 C8 14 16 10 24 18 C32 10 40 14 38 22 Z" />
+        </svg>
+      );
+    case "twin_call":
+      return (
+        <svg {...common}>
+          <circle cx="16" cy="24" r="8" />
+          <circle cx="32" cy="24" r="8" />
+        </svg>
+      );
+    case "kennel":
+      return (
+        <svg {...common}>
+          <path d="M8 40 V22 L24 10 L40 22 V40 Z" />
+          <path d="M18 40 V28 H30 V40" />
+        </svg>
+      );
+    case "primeval":
+      return (
+        <svg {...common}>
+          <circle cx="16" cy="16" r="5" />
+          <circle cx="32" cy="16" r="5" />
+          <circle cx="16" cy="32" r="5" />
+          <circle cx="32" cy="32" r="5" />
+        </svg>
+      );
+    case "ashen_gift":
+      return (
+        <svg {...common}>
+          <path d="M16 32 H32 L24 10 Z" />
+          <path d="M12 38 H36" />
+        </svg>
+      );
+    case "pale_coin":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="12" />
+          <path d="M24 16 V32 M20 20 H28 M20 28 H28" />
+        </svg>
+      );
+    case "pall":
+      return (
+        <svg {...common}>
+          <path d="M10 36 Q24 8 38 36" />
+        </svg>
+      );
+    case "harrow":
+      return (
+        <svg {...common}>
+          <path d="M12 16 H36 M12 24 H36 M12 32 H28" />
+        </svg>
+      );
+    case "jester":
+      return (
+        <svg {...common}>
+          <path d="M24 10 L30 22 H18 Z" />
+          <circle cx="24" cy="32" r="8" />
+        </svg>
+      );
+    case "chime":
+      return (
+        <svg {...common}>
+          <path d="M16 16 H32 L28 34 H20 Z" />
+          <path d="M24 34 V40" />
+        </svg>
+      );
+    case "omen":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="20" r="8" />
+          <path d="M12 40 L24 28 L36 40" />
+        </svg>
+      );
+    case "reprise":
+      return (
+        <svg {...common}>
+          <path d="M14 24 H34" />
+          <path d="M26 16 L34 24 L26 32" />
+        </svg>
+      );
+    case "last_word":
+      return (
+        <svg {...common}>
+          <path d="M10 38 L24 8 L38 38" />
+        </svg>
+      );
+    case "masquerade":
+      return (
+        <svg {...common}>
+          <path d="M8 24 Q24 10 40 24 Q24 38 8 24" />
+          <circle cx="18" cy="24" r="2" />
+          <circle cx="30" cy="24" r="2" />
+        </svg>
+      );
+    case "the_toll":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="12" />
+          <path d="M24 24 L24 14 M24 24 L32 28" />
+        </svg>
+      );
+    case "gild":
+      return (
+        <svg {...common}>
+          <path d="M24 8 L28 20 H40 L30 28 L34 40 L24 32 L14 40 L18 28 L8 20 H20 Z" />
+        </svg>
+      );
+    case "burial":
+      return (
+        <svg {...common}>
+          <path d="M8 32 H40 V38 H8 Z" />
+          <path d="M16 32 V18 H32 V32" />
+        </svg>
+      );
+    case "shield_bash":
+      return (
+        <svg {...common}>
+          <path d="M24 8 L38 16 V28 C38 36 30 40 24 42 C18 40 10 36 10 28 V16 Z" />
+          <path d="M18 24 L24 30 L32 18" />
+        </svg>
+      );
+    case "rally":
+      return (
+        <svg {...common}>
+          <path d="M24 8 V40 M16 16 L24 8 L32 16" />
+        </svg>
+      );
+    case "overhead":
+      return (
+        <svg {...common}>
+          <path d="M12 12 H36 L24 40 Z" />
+        </svg>
+      );
+    case "bastion":
+      return (
+        <svg {...common}>
+          <path d="M8 36 H40 V18 L24 8 L8 18 Z" />
+          <path d="M24 8 V36" />
+        </svg>
+      );
+    case "groundbreaker":
+      return (
+        <svg {...common}>
+          <path d="M24 6 V28 M16 20 L24 28 L32 20" />
+          <path d="M10 36 H38" />
+        </svg>
+      );
+    case "counterfeit":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="10" />
+          <path d="M20 24 H28 M24 20 V28" />
+        </svg>
+      );
+    case "backstep":
+      return (
+        <svg {...common}>
+          <path d="M34 14 L14 24 L34 34" />
+          <path d="M14 24 H38" />
+        </svg>
+      );
+    case "coin_flip":
+      return (
+        <svg {...common}>
+          <ellipse cx="24" cy="24" rx="8" ry="12" />
+          <path d="M24 12 V36" />
+        </svg>
+      );
+    case "vial_dagger":
+      return (
+        <svg {...common}>
+          <path d="M18 40 L24 8 L30 40" />
+          <path d="M16 28 H32" />
+        </svg>
+      );
+    case "smoke":
+      return (
+        <svg {...common}>
+          <path d="M10 34 Q18 20 24 28 Q30 36 38 22" />
+          <path d="M14 38 Q24 26 34 38" />
+        </svg>
+      );
+    case "prism_pulse":
+      return (
+        <svg {...common}>
+          <path d="M24 8 L38 36 H10 Z" />
+          <path d="M24 8 V36" />
+        </svg>
+      );
+    case "neural_reboot":
+      return (
+        <svg {...common}>
+          <path d="M16 16 H32 V32 H16 Z" />
+          <path d="M20 24 H28 M24 20 V28" />
+        </svg>
+      );
+    case "voltage":
+      return (
+        <svg {...common}>
+          <path d="M26 6 L14 26 H24 L22 42 L36 20 H26 Z" />
+        </svg>
+      );
+    case "channel_spark":
+      return (
+        <svg {...common}>
+          <path d="M24 8 V20 M16 14 L24 20 L32 14" />
+          <path d="M18 28 L30 40 M30 28 L18 40" />
+        </svg>
+      );
+    case "overheat":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="10" />
+          <circle cx="24" cy="24" r="4" />
+          <path d="M24 6 V10 M24 38 V42 M6 24 H10 M38 24 H42" />
+        </svg>
+      );
+    case "bolt":
+    case "thunder":
+      return (
+        <svg {...common}>
+          <path d="M26 6 L14 26 H24 L22 42 L36 20 H26 Z" />
+        </svg>
+      );
+    case "study":
+    case "sage":
+      return (
+        <svg {...common}>
+          <path d="M12 10 H36 V38 H12 Z" />
+          <path d="M18 16 H30 M18 22 H28 M18 28 H26" />
+        </svg>
+      );
+    case "fireball":
+    case "meteor":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="26" r="10" />
+          <path d="M24 8 C28 14 32 16 30 22" />
+        </svg>
+      );
+    case "blizzard":
+    case "ice_lance":
+      return (
+        <svg {...common}>
+          <path d="M24 6 V42 M16 14 L24 22 L32 14 M16 34 L24 26 L32 34" />
+        </svg>
+      );
+    case "mana_font":
+    case "discharge":
+      return (
+        <svg {...common}>
+          <circle cx="24" cy="24" r="8" />
+          <path d="M24 8 V12 M24 36 V40 M8 24 H12 M36 24 H40" />
+        </svg>
+      );
+    case "arcane_barrier":
+      return (
+        <svg {...common}>
+          <path d="M24 8 L38 16 V28 C38 36 30 40 24 42 C18 40 10 36 10 28 V16 Z" />
+        </svg>
+      );
+    case "bite":
+    case "feast":
+    case "drain":
+    case "exsanguinate":
+      return (
+        <svg {...common}>
+          <path d="M18 14 L24 36 L30 14" />
+          <path d="M16 22 H32" />
+        </svg>
+      );
+    case "lash":
+    case "crimson_tide":
+      return (
+        <svg {...common}>
+          <path d="M12 34 C20 8 28 8 36 34" />
+          <path d="M24 12 V38" />
+        </svg>
+      );
+    case "blood_shield":
+      return (
+        <svg {...common}>
+          <path d="M24 8 L38 16 V28 C38 36 30 40 24 42 C18 40 10 36 10 28 V16 Z" />
+          <path d="M24 18 V30 M20 24 H28" />
+        </svg>
+      );
+    case "sanguine":
+    case "hunger":
+    case "blood_tithe":
+    case "crimson_requiem":
+    case "blood_rite":
+    case "pale_curse":
+      return (
+        <svg {...common}>
+          <path d="M24 10 C18 20 16 26 16 30 C16 36 20 40 24 40 C28 40 32 36 32 30 C32 26 30 20 24 10 Z" />
+        </svg>
+      );
+    case "summon_leech":
+      return (
+        <svg {...common}>
+          <ellipse cx="24" cy="26" rx="12" ry="8" />
+          <path d="M12 26 C8 18 16 12 24 16" />
         </svg>
       );
     default:

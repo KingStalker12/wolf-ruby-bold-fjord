@@ -5,6 +5,7 @@ import {
   addPotion,
   addRelic,
   afterCombat,
+  beginAct2,
   beginPlayerTurn,
   canPlay,
   endPlayerTurn,
@@ -15,6 +16,7 @@ import {
   removeCard,
   restHeal,
   restoreRng,
+  runDepth,
   startCombat,
   stepEnemy,
   upgradeCard,
@@ -23,6 +25,7 @@ import {
 import { applyEventChoice, rollEvent } from "./events";
 import { availableNodes, nodeById } from "./map";
 import { rollCardRewards } from "./cards";
+import { type ClassId } from "./characters";
 import { clearRun, defaultMeta, loadMeta, loadRun, saveMeta, saveRun } from "./save";
 import type {
   CombatState,
@@ -65,12 +68,14 @@ interface GameStore {
   menuOpen: boolean;
   hint: string | null;
   hydrate: () => void;
-  newDescent: () => void;
+  openSelect: () => void;
+  beginRun: (classId: ClassId) => void;
   continueRun: () => void;
   abandon: () => void;
   setScreen: (s: Screen) => void;
   toggleMute: () => void;
   toggleShake: () => void;
+  togglePlain: () => void;
   selectNode: (id: string) => void;
   play: (uid: string, targetId?: string) => void;
   drink: (slot: number, targetId?: string) => void;
@@ -97,12 +102,14 @@ interface GameStore {
 
 function snapshot(get: () => GameStore) {
   const s = get();
-  if (!s.run) {
-    clearRun();
-    return;
-  }
-  if (s.screen === "title" || s.screen === "howto" || s.screen === "gameover" || s.screen === "victory") {
-    clearRun();
+  if (!s.run) return;
+  if (
+    s.screen === "title" ||
+    s.screen === "select" ||
+    s.screen === "howto" ||
+    s.screen === "gameover" ||
+    s.screen === "victory"
+  ) {
     return;
   }
   saveRun({
@@ -121,7 +128,7 @@ function pushFloat(set: (fn: (s: GameStore) => Partial<GameStore>) => void, f: O
   set((s) => ({ floats: [...s.floats, { ...f, id }] }));
   setTimeout(() => {
     set((s) => ({ floats: s.floats.filter((x) => x.id !== id) }));
-  }, 700);
+  }, 1600);
 }
 
 export const useGame = create<GameStore>((set, get) => ({
@@ -142,15 +149,50 @@ export const useGame = create<GameStore>((set, get) => ({
   hint: null,
 
   hydrate: () => {
-    const meta = loadMeta();
-    setMuted(meta.mute);
-    set({ ready: true, meta });
+    try {
+      const meta = loadMeta();
+      try {
+        setMuted(meta.mute);
+      } catch {
+        /* audio blocked */
+      }
+      const saved = loadRun();
+      if (saved?.run && saved.run.map?.length) {
+        const screen = saved.screen;
+        const broken =
+          (screen === "combat" && !saved.combat) ||
+          (screen === "shop" && !saved.run.shop) ||
+          (screen === "reward" && !saved.reward) ||
+          (screen === "event" && !saved.event) ||
+          (screen === "picker" && !saved.picker);
+        set({
+          ready: true,
+          meta,
+          screen: broken ? "map" : screen,
+          run: saved.run,
+          combat: saved.combat,
+          reward: saved.reward,
+          event: saved.event,
+          picker: saved.picker,
+        });
+        return;
+      }
+      set({ ready: true, meta });
+    } catch {
+      set({ ready: true, screen: "title", run: null, combat: null });
+    }
   },
 
-  newDescent: () => {
+  openSelect: () => {
     unlockAudio();
     sfxPlay.click();
-    const { run } = newRun();
+    set({ screen: "select", menuOpen: false });
+  },
+
+  beginRun: (classId) => {
+    unlockAudio();
+    sfxPlay.click();
+    const { run } = newRun(classId);
     set({
       screen: "map",
       run,
@@ -218,6 +260,12 @@ export const useGame = create<GameStore>((set, get) => ({
     set({ meta });
   },
 
+  togglePlain: () => {
+    const meta = { ...get().meta, plain: !get().meta.plain };
+    saveMeta(meta);
+    set({ meta });
+  },
+
   selectNode: (id) => {
     if (busy) return;
     const { run } = get();
@@ -240,10 +288,15 @@ export const useGame = create<GameStore>((set, get) => ({
     if (node.type === "combat" || node.type === "elite" || node.type === "boss") {
       const combat = startCombat(nextRun, rng, node.type);
       persistRng(nextRun, rng);
-      const hint =
-        !get().meta.seenHint
-          ? "Enemies telegraph their next action. Block absorbs damage before your life does."
-          : null;
+      const hint = !get().meta.seenHint
+        ? nextRun.classId === "kindled"
+          ? "Familiars pulse at the end of your turn. Play the same Call again to Evolve them."
+          : nextRun.classId === "vampire"
+            ? "Bite heals. Lash spends HP. The Chalice turns that blood into Block."
+            : nextRun.classId === "mage"
+            ? "Spells bank Arcana. Spend 3 on Fireball for a burst, or Discharge the whole pool."
+            : "Enemies telegraph their next action. Block absorbs damage before your life does."
+        : null;
       set({
         run: nextRun,
         combat,
@@ -258,7 +311,8 @@ export const useGame = create<GameStore>((set, get) => ({
       nextRun.shop = shop;
       set({ run: nextRun, screen: "shop" });
     } else if (node.type === "event") {
-      const ev = rollEvent(rng);
+      const ev = rollEvent(rng, nextRun.seenEvents ?? [], nextRun.act ?? 1);
+      nextRun.seenEvents = [...(nextRun.seenEvents ?? []), ev.id];
       persistRng(nextRun, rng);
       set({
         run: nextRun,
@@ -276,6 +330,8 @@ export const useGame = create<GameStore>((set, get) => ({
     const card = combat.hand.find((c) => c.uid === uid);
     if (!card || !canPlay(run, combat, card)) return;
     const rng = restoreRng(run);
+    const hp0 = run.hp;
+    const block0 = combat.block;
     const res = playCard(run, combat, rng, uid, targetId);
     persistRng(res.run, rng);
     if (res.needTarget) {
@@ -287,6 +343,13 @@ export const useGame = create<GameStore>((set, get) => ({
     for (const d of res.damageTo) {
       pushFloat(set, { text: `-${d.amount}`, color: "hp", x: 0, y: 0 });
     }
+    if (res.playerHurt > 0) {
+      pushFloat(set, { text: `-${res.playerHurt}`, color: "hp", x: 0, y: 0 });
+    }
+    const healed = res.run.hp - hp0 + res.playerHurt;
+    if (healed > 0) pushFloat(set, { text: `+${healed}`, color: "heal", x: 0, y: 0 });
+    const gained = res.combat.block - block0;
+    if (gained > 0) pushFloat(set, { text: `+${gained}`, color: "block", x: 0, y: 0 });
     if (get().meta.shake && res.damageTo.some((d) => d.amount >= 12)) {
       set({ shake: Math.min(1, get().shake + 0.45) });
     }
@@ -314,6 +377,8 @@ export const useGame = create<GameStore>((set, get) => ({
     const { run, combat } = get();
     if (!run || !combat) return;
     const rng = restoreRng(run);
+    const hp0 = run.hp;
+    const block0 = combat.block;
     const res = usePotion(run, combat, rng, slot, targetId);
     persistRng(res.run, rng);
     if (res.needTarget) {
@@ -321,6 +386,13 @@ export const useGame = create<GameStore>((set, get) => ({
       return;
     }
     sfxPlay.heal();
+    const healed = res.run.hp - hp0;
+    if (healed > 0) pushFloat(set, { text: `+${healed}`, color: "heal", x: 0, y: 0 });
+    const gained = res.combat.block - block0;
+    if (gained > 0) pushFloat(set, { text: `+${gained}`, color: "block", x: 0, y: 0 });
+    for (const d of res.damageTo) {
+      pushFloat(set, { text: `-${d.amount}`, color: "hp", x: 0, y: 0 });
+    }
     set({ run: { ...res.run }, combat: { ...res.combat } });
     if (res.won) void winCombat(get, set);
     snapshot(get);
@@ -501,9 +573,23 @@ export const useGame = create<GameStore>((set, get) => ({
       snapshot(get);
       return;
     }
+    if (res.followUp === "upgrade") {
+      set({
+        run: res.run,
+        event: { ...event, resolved: true, result: res.message },
+        picker: {
+          mode: "upgrade",
+          title: "Rewrite a rite",
+          subtitle: "Upgrade a card in your deck.",
+        },
+        screen: "picker",
+      });
+      snapshot(get);
+      return;
+    }
     if (res.followUp === "cards") {
-      const bias = event.defId === "bargain" ? "boss" : "normal";
-      const cards = rollCardRewards(rng, bias);
+      const bias = res.cardBias ?? (event.defId === "bargain" ? "boss" : "normal");
+      const cards = rollCardRewards(rng, bias, 3, res.run.classId);
       persistRng(res.run, rng);
       set({
         run: res.run,
@@ -555,8 +641,30 @@ async function runEnemyTurn(
     return;
   }
   const rng = restoreRng(run);
-  endPlayerTurn(run, combat, rng);
+  const hp0 = run.hp;
+  const pulse = endPlayerTurn(run, combat, rng);
+  const healed = run.hp - hp0;
+  if (pulse.damageTo.length) {
+    sfxPlay.hit();
+    for (const d of pulse.damageTo) {
+      pushFloat(set, { text: `-${d.amount}`, color: "hp", x: 0, y: 0 });
+    }
+    set({ flashes: pulse.damageTo.map((d) => d.id) });
+    window.setTimeout(() => {
+      const ids = pulse.damageTo.map((d) => d.id);
+      set((s) => ({ flashes: s.flashes.filter((id) => !ids.includes(id)) }));
+    }, 280);
+  } else if (pulse.blockGained > 0) {
+    sfxPlay.block();
+    pushFloat(set, { text: `+${pulse.blockGained}`, color: "block", x: 0, y: 0 });
+  }
+  if (healed > 0) pushFloat(set, { text: `+${healed}`, color: "heal", x: 0, y: 0 });
   set({ run: { ...run }, combat: { ...combat } });
+  if (combat.enemies.every((e) => e.hp <= 0)) {
+    busy = false;
+    await winCombat(get, set);
+    return;
+  }
   const wait = reduced() ? 80 : 420;
   const living = () => (get().combat?.enemies ?? []).filter((e) => e.hp > 0);
   for (const enemy of living()) {
@@ -580,7 +688,7 @@ async function runEnemyTurn(
       }, 280);
     } else if (res.blocked > 0) {
       sfxPlay.block();
-      pushFloat(set, { text: `${res.blocked}`, color: "block", x: 0, y: 0 });
+      pushFloat(set, { text: `+${res.blocked}`, color: "block", x: 0, y: 0 });
     }
     set({ run: { ...res.run }, combat: { ...res.combat } });
     if (res.dead) {
@@ -621,7 +729,7 @@ async function winCombat(
     return;
   }
   const node = run.currentNodeId ? nodeById(run.map, run.currentNodeId) : undefined;
-  if (node?.type === "boss") {
+  if (node?.type === "boss" && (run.act ?? 1) >= 2) {
     busy = false;
     finish(get, set, true);
     return;
@@ -649,7 +757,7 @@ function finish(
     ...meta,
     wins: meta.wins + (win ? 1 : 0),
     losses: meta.losses + (win ? 0 : 1),
-    bestRow: Math.max(meta.bestRow, run?.row ?? -1),
+    bestRow: Math.max(meta.bestRow, run ? runDepth(run) - 1 : -1),
   };
   saveMeta(nextMeta);
   clearRun();
@@ -673,6 +781,25 @@ function maybeLeaveReward(
   const relicDone = reward.pickedRelic || !reward.relic;
   const potionDone = reward.pickedPotion || !reward.potion;
   if (reward.pickedCard && relicDone && potionDone) {
+    const { run } = get();
+    if (run) {
+      const node = run.currentNodeId ? nodeById(run.map, run.currentNodeId) : undefined;
+      if (node?.type === "boss" && (run.act ?? 1) < 2) {
+        const rng = restoreRng(run);
+        beginAct2(run, rng);
+        persistRng(run, rng);
+        set({
+          run: { ...run },
+          reward: null,
+          combat: null,
+          inspect: null,
+          screen: "map",
+          hint: "The first seal breaks. A second map opens below.",
+        });
+        snapshot(get);
+        return;
+      }
+    }
     set({ reward: null, combat: null, inspect: null, screen: "map" });
     snapshot(get);
   } else {
@@ -681,7 +808,10 @@ function maybeLeaveReward(
 }
 
 if (typeof window !== "undefined") {
+  const persist = () => snapshot(useGame.getState);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") snapshot(useGame.getState);
+    if (document.visibilityState === "hidden") persist();
   });
+  window.addEventListener("pagehide", persist);
+  window.addEventListener("beforeunload", persist);
 }

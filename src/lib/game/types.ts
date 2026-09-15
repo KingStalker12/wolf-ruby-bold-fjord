@@ -1,8 +1,11 @@
+import type { FamiliarInst } from "./familiars";
+
 export type CardType = "attack" | "skill" | "power" | "status";
 export type Rarity = "starter" | "common" | "uncommon" | "rare" | "status";
 export type NodeType = "combat" | "elite" | "event" | "rest" | "shop" | "boss";
 export type Screen =
   | "title"
+  | "select"
   | "howto"
   | "map"
   | "combat"
@@ -28,6 +31,9 @@ export interface CardDef {
   ethereal?: boolean;
   unplayable?: boolean;
   special?: CardSpecial;
+  summon?: "ember" | "rime" | "gloom" | "spark" | "twin" | "all";
+  classId?: "interred" | "veil" | "kindled" | "mage" | "vampire";
+  neutral?: boolean;
   text: (n: CardNumbers) => string;
   numbers: (up: boolean) => CardNumbers;
 }
@@ -44,7 +50,44 @@ export type CardSpecial =
   | "bloodletting"
   | "entrench"
   | "immolate"
-  | "dropkick";
+  | "dropkick"
+  | "evokeLeft"
+  | "pulseFamiliars"
+  | "evolveAll"
+  | "extraSlot"
+  | "discardRand"
+  | "reprise"
+  | "handUpgrade"
+  | "lastWord"
+  | "blockPerAttack"
+  | "envenom"
+  | "afterburn"
+  | "cinderBonus"
+  | "execute"
+  | "shieldBash"
+  | "overhead"
+  | "bastion"
+  | "counterfeit"
+  | "backstep"
+  | "coinFlip"
+  | "smoke"
+  | "prism"
+  | "reboot"
+  | "voltage"
+  | "channelSpark"
+  | "overheat"
+  | "spendArcana"
+  | "discharge"
+  | "thunderArcana"
+  | "iceLance"
+  | "sage"
+  | "feast"
+  | "drainAll"
+  | "hunger"
+  | "bloodPrice"
+  | "leech"
+  | "bloodRite"
+  | "bloodReckoning";
 
 export interface CardNumbers {
   damage?: number;
@@ -57,6 +100,18 @@ export interface CardNumbers {
   vulnerable?: number;
   metallicize?: number;
   hpLoss?: number;
+  stageBonus?: number;
+  gold?: number;
+  toxin?: number;
+  cinder?: number;
+  daze?: number;
+  heal?: number;
+  bonus?: number;
+  focus?: number;
+  plasma?: number;
+  dexterity?: number;
+  threshold?: number;
+  arcana?: number;
 }
 
 export interface CardInst {
@@ -70,14 +125,20 @@ export interface EnemyDef {
   name: string;
   hp: [number, number];
   pattern: Intent[];
+  shuffleStart?: boolean;
 }
 
 export type Intent =
   | { kind: "attack"; dmg: number; hits?: number }
   | { kind: "defend"; block: number }
   | { kind: "buff"; strength: number; block?: number }
-  | { kind: "debuff"; weak?: number; vulnerable?: number }
-  | { kind: "attackDefend"; dmg: number; block: number };
+  | { kind: "debuff"; weak?: number; vulnerable?: number; daze?: number }
+  | { kind: "attackDefend"; dmg: number; block: number }
+  | { kind: "toxin"; toxin: number }
+  | { kind: "cinder"; cinder: number }
+  | { kind: "attackToxin"; dmg: number; toxin: number }
+  | { kind: "attackCinder"; dmg: number; cinder: number }
+  | { kind: "daze"; daze: number };
 
 export interface EnemyInst {
   id: string;
@@ -91,6 +152,9 @@ export interface EnemyInst {
   vulnerable: number;
   patternIndex: number;
   intent: Intent;
+  toxin: number;
+  cinder: number;
+  daze: number;
 }
 
 export interface RelicDef {
@@ -142,6 +206,31 @@ export interface CombatState {
   vulnerable: number;
   frail: number;
   metallicize: number;
+  toxin: number;
+  cinder: number;
+  daze: number;
+  envenom: number;
+  afterburn: number;
+  bastion: number;
+  smokeMirrors: number;
+  focus: number;
+  plasma: number;
+  prismPulse: number;
+  prismUsed: boolean;
+  overheatPlasma: number;
+  overheatNeed: number;
+  cardsPlayed: number;
+  blockGainedThisTurn: number;
+  toxinApplied: boolean;
+  cinderApplied: boolean;
+  arcana: number;
+  sage: boolean;
+  hunger: number;
+  leech: number;
+  leechDrain: number;
+  bloodSpentTurn: number;
+  bloodSpentBattle: number;
+  journal: string[];
   noDraw: boolean;
   hand: CardInst[];
   drawPile: CardInst[];
@@ -150,6 +239,8 @@ export interface CombatState {
   targetingUid: string | null;
   targetingPotion: number | null;
   attacksPlayed: number;
+  familiars: FamiliarInst[];
+  familiarSlots: number;
   log: string;
 }
 
@@ -168,6 +259,7 @@ export interface EventDef {
   title: string;
   body: string;
   choices: EventChoice[];
+  act?: number;
 }
 
 export interface EventChoice {
@@ -194,6 +286,7 @@ export interface PickerState {
 export interface RunState {
   seed: number;
   rngState: number;
+  classId: "interred" | "veil" | "kindled" | "mage" | "vampire";
   gold: number;
   hp: number;
   maxHp: number;
@@ -204,10 +297,12 @@ export interface RunState {
   currentNodeId: string | null;
   visited: string[];
   row: number;
+  act: number;
   cardSeq: number;
   shop: ShopState | null;
   floorKills: number;
   damageDealt: number;
+  seenEvents: string[];
 }
 
 export interface MetaState {
@@ -218,12 +313,13 @@ export interface MetaState {
   mute: boolean;
   shake: boolean;
   seenHint: boolean;
+  plain: boolean;
 }
 
 export interface FloatNum {
   id: number;
   text: string;
-  color: "hp" | "block" | "heal" | "fg";
+  color: "hp" | "block" | "heal" | "buff";
   x: number;
   y: number;
 }

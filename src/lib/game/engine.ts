@@ -1,5 +1,18 @@
-import { CARD_BY_ID, cardCost, defOf, mintCard, rollCardRewards, starterDeck, setCardSeq, getCardSeq, priceFor } from "./cards";
+import { CARD_BY_ID, cardCost, defOf, mintCard, rollCardRewards, setCardSeq, getCardSeq, priceFor } from "./cards";
+import { CLASS_BY_ID, starterDeckFor, type ClassId } from "./characters";
 import { nextIntent, rollEncounter } from "./enemies";
+import {
+  callFamiliar,
+  callMany,
+  evokeLeft,
+  evolveAll,
+  makeFamiliar,
+  merge,
+  pulseAll,
+  emptyPulse,
+  type FamiliarKind,
+  type FamiliarPulse,
+} from "./familiars";
 import { generateMap } from "./map";
 import { rollPotion, rollRelic, rollRelicOffers, relicPrice } from "./items";
 import { Rng } from "./rng";
@@ -16,7 +29,6 @@ import type {
 
 const HAND_LIMIT = 10;
 const BASE_ENERGY = 3;
-const BASE_HP = 72;
 
 export function hasRelic(run: RunState, id: string): boolean {
   return run.relics.includes(id);
@@ -49,6 +61,48 @@ export function calcBlock(base: number, dex: number, frail: number): number {
   let b = base + dex;
   if (frail > 0) b = Math.floor(b * 0.75);
   return Math.max(0, b);
+}
+
+function gainBlock(combat: CombatState, amount: number): number {
+  if (amount <= 0) return 0;
+  let add = amount;
+  if (combat.bastion > 0) add += combat.bastion;
+  combat.block += add;
+  combat.blockGainedThisTurn += add;
+  return add;
+}
+
+function note(combat: CombatState, line: string) {
+  if (!line) return;
+  combat.log = line;
+  const prev = combat.journal ?? [];
+  if (prev[0] === line) return;
+  combat.journal = [line, ...prev].slice(0, 8);
+}
+
+function applyEnemyToxin(combat: CombatState) {
+  if (combat.toxinApplied) return;
+  combat.toxinApplied = true;
+  combat.toxin += 1;
+}
+
+function applyEnemyCinder(combat: CombatState) {
+  if (combat.cinderApplied) return;
+  combat.cinderApplied = true;
+  combat.cinder += 1;
+}
+
+const DAZE_FOES = new Set(["warden", "crown", "sentinel", "priest", "paladin", "saint", "wolf"]);
+
+function applyEnemyDaze(combat: CombatState, enemy: EnemyInst, amount: number) {
+  if (!DAZE_FOES.has(enemy.defId) || amount <= 0) return;
+  combat.daze += amount;
+}
+
+function randomLiving(combat: CombatState, rng: Rng): EnemyInst | undefined {
+  const living = combat.enemies.filter((e) => e.hp > 0);
+  if (!living.length) return undefined;
+  return rng.pick(living);
 }
 
 function applyHpDamage(hp: number, block: number, amount: number): { hp: number; block: number; taken: number } {
@@ -85,29 +139,33 @@ export function drawCards(combat: CombatState, rng: Rng, n: number) {
   }
 }
 
-export function newRun(seed?: number): { run: RunState; rng: Rng } {
+export function newRun(classId: ClassId = "interred", seed?: number): { run: RunState; rng: Rng } {
   const s = seed ?? ((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0);
   const rng = new Rng(s);
   setCardSeq(1);
-  const deck = starterDeck();
-  const map = generateMap(rng);
+  const cls = CLASS_BY_ID[classId];
+  const deck = starterDeckFor(classId);
+  const map = generateMap(rng, 1);
   const run: RunState = {
     seed: s,
     rngState: rng.getState(),
+    classId,
     gold: 99,
-    hp: BASE_HP,
-    maxHp: BASE_HP,
+    hp: cls.hp,
+    maxHp: cls.hp,
     deck,
-    relics: ["burning_blood"],
+    relics: [cls.relic],
     potions: [null, null, null],
     map,
     currentNodeId: null,
     visited: [],
     row: -1,
+    act: 1,
     cardSeq: getCardSeq(),
     shop: null,
     floorKills: 0,
     damageDealt: 0,
+    seenEvents: [],
   };
   return { run, rng };
 }
@@ -122,8 +180,21 @@ export function persistRng(run: RunState, rng: Rng) {
   run.cardSeq = getCardSeq();
 }
 
+export function runDepth(run: RunState): number {
+  return Math.max(0, run.act - 1) * 12 + Math.max(0, run.row + 1);
+}
+
+export function beginAct2(run: RunState, rng: Rng) {
+  run.act = 2;
+  run.map = generateMap(rng, 2);
+  run.currentNodeId = null;
+  run.visited = [];
+  run.row = -1;
+  run.shop = null;
+}
+
 export function startCombat(run: RunState, rng: Rng, type: NodeType): CombatState {
-  const enemies = rollEncounter(type, rng, Math.max(0, run.row));
+  const enemies = rollEncounter(type, rng, Math.max(0, run.row), run.act ?? 1);
   if (hasRelic(run, "philosopher")) {
     for (const e of enemies) e.strength += 1;
   }
@@ -136,11 +207,36 @@ export function startCombat(run: RunState, rng: Rng, type: NodeType): CombatStat
     maxEnergy: BASE_ENERGY + (hasRelic(run, "philosopher") ? 1 : 0),
     block: hasRelic(run, "anchor") ? 10 : 0,
     strength: hasRelic(run, "vajra") ? 1 : 0,
-    dexterity: 0,
+    dexterity: hasRelic(run, "pale_shroud") ? 1 : 0,
     weak: 0,
     vulnerable: 0,
     frail: 0,
     metallicize: 0,
+    toxin: 0,
+    cinder: 0,
+    daze: 0,
+    envenom: 0,
+    afterburn: 0,
+    bastion: 0,
+    smokeMirrors: 0,
+    focus: 0,
+    plasma: 0,
+    prismPulse: 0,
+    prismUsed: false,
+    overheatPlasma: 0,
+    overheatNeed: 0,
+    cardsPlayed: 0,
+    blockGainedThisTurn: hasRelic(run, "anchor") ? 10 : 0,
+    toxinApplied: false,
+    cinderApplied: false,
+    arcana: 0,
+    sage: false,
+    hunger: 0,
+    leech: 0,
+    leechDrain: 0,
+    bloodSpentTurn: 0,
+    bloodSpentBattle: 0,
+    journal: ["The chamber answers."],
     noDraw: false,
     hand: [],
     drawPile: copies,
@@ -149,6 +245,8 @@ export function startCombat(run: RunState, rng: Rng, type: NodeType): CombatStat
     targetingUid: null,
     targetingPotion: null,
     attacksPlayed: 0,
+    familiars: [],
+    familiarSlots: run.classId === "kindled" ? 3 : 0,
     log: "The chamber answers.",
   };
   const drawN = 5 + (hasRelic(run, "bag") ? 2 : 0);
@@ -156,6 +254,10 @@ export function startCombat(run: RunState, rng: Rng, type: NodeType): CombatStat
   if (hasRelic(run, "blood_vial")) {
     run.hp = Math.min(run.maxHp, run.hp + 2);
   }
+  if (hasRelic(run, "ash_locket") && combat.familiarSlots > 0) {
+    combat.familiars.push(makeFamiliar("spark"));
+  }
+  if (hasRelic(run, "star_crystal")) combat.arcana = 1;
   return combat;
 }
 
@@ -187,7 +289,7 @@ function hitEnemy(
   amount: number,
   killed: string[],
   damageTo: { id: string; amount: number }[],
-) {
+): number {
   const res = applyHpDamage(enemy.hp, enemy.block, amount);
   enemy.hp = res.hp;
   enemy.block = res.block;
@@ -199,6 +301,7 @@ function hitEnemy(
     killed.push(enemy.id);
     run.floorKills += 1;
   }
+  return res.taken;
 }
 
 function dealToEnemy(
@@ -210,12 +313,14 @@ function dealToEnemy(
   doubleHit: boolean,
   killed: string[],
   damageTo: { id: string; amount: number }[],
-) {
+): number {
+  let taken = 0;
   for (let i = 0; i < hits; i++) {
     if (enemy.hp <= 0) break;
     const dmg = calcDamage(base, playerStr(run, combat), combat.weak, enemy.vulnerable, doubleHit);
-    hitEnemy(run, combat, enemy, dmg, killed, damageTo);
+    taken += hitEnemy(run, combat, enemy, dmg, killed, damageTo);
   }
+  return taken;
 }
 
 function loseHp(run: RunState, combat: CombatState, amount: number): number {
@@ -266,7 +371,10 @@ export function playCard(
 
   combat.targetingUid = null;
   combat.hand.splice(idx, 1);
+  const energyBefore = combat.energy;
   combat.energy -= cardCost(card);
+  combat.cardsPlayed += 1;
+  if (combat.overheatPlasma > 0) combat.plasma += combat.overheatPlasma;
 
   const nums = d.numbers(card.upgraded);
   const killed: string[] = [];
@@ -275,25 +383,45 @@ export function playCard(
 
   const target = targetId ? combat.enemies.find((e) => e.id === targetId && e.hp > 0) : undefined;
 
-  if (nums.hpLoss) {
+  if (d.special === "bloodRite") {
+    const lo = nums.hpLoss ?? 1;
+    const hi = Math.max(lo, nums.bonus ?? 4);
+    const n = rng.int(lo, hi);
+    playerHurt += loseHp(run, combat, n);
+    combat.strength += n;
+  } else if (nums.hpLoss && d.special !== "counterfeit") {
     playerHurt += loseHp(run, combat, nums.hpLoss);
+  }
+  if (playerHurt > 0) {
+    combat.bloodSpentTurn += playerHurt;
+    combat.bloodSpentBattle += playerHurt;
+    if (hasRelic(run, "crimson_chalice")) gainBlock(combat, 3);
   }
 
   if (d.special === "limitBreak") {
     combat.strength *= 2;
-  } else if (nums.strength && nums.strength > 0 && d.special !== "disarm") {
+  } else if (nums.strength && nums.strength > 0 && d.special !== "disarm" && d.special !== "voltage") {
     combat.strength += nums.strength;
   }
 
   if (nums.metallicize) combat.metallicize += nums.metallicize;
-  if (nums.energy) combat.energy += nums.energy;
+  if (nums.energy && d.special !== "reboot") combat.energy += nums.energy;
+  if (nums.dexterity && d.special !== "coinFlip") combat.dexterity += nums.dexterity;
+  if (nums.focus && d.special !== "reboot" && d.special !== "voltage") combat.focus += nums.focus;
 
-  if (nums.block) {
-    combat.block += calcBlock(nums.block, combat.dexterity, combat.frail);
+  if (nums.block && d.special !== "blockPerAttack") {
+    gainBlock(combat, calcBlock(nums.block, combat.dexterity, combat.frail));
   }
+  if (d.special === "blockPerAttack") {
+    const nAtk = combat.hand.filter((c) => defOf(c).type === "attack").length;
+    gainBlock(combat, calcBlock((nums.block ?? 4) * nAtk, combat.dexterity, combat.frail));
+  }
+
+  if (nums.gold) run.gold += nums.gold;
 
   const doubleHit =
     d.type === "attack" && hasRelic(run, "pen_nib") && (combat.attacksPlayed + 1) % 10 === 0;
+  let drained = 0;
 
   if (d.special === "fiendFire") {
     const others = combat.hand.splice(0, combat.hand.length);
@@ -306,15 +434,39 @@ export function playCard(
     } else {
       combat.exhaustPile.push(...others);
     }
-  } else if (d.type === "attack" && nums.damage) {
+  } else if (
+    d.type === "attack" &&
+    nums.damage &&
+    d.special !== "discharge" &&
+    d.special !== "bloodPrice" &&
+    d.special !== "bloodReckoning"
+  ) {
     const hits = nums.hits ?? 1;
     if (d.target === "all") {
       for (const e of combat.enemies.filter((en) => en.hp > 0)) {
-        dealToEnemy(run, combat, e, nums.damage, hits, doubleHit, killed, damageTo);
+        drained += dealToEnemy(run, combat, e, nums.damage, hits, doubleHit, killed, damageTo);
       }
     } else if (target) {
-      dealToEnemy(run, combat, target, nums.damage, hits, doubleHit, killed, damageTo);
+      drained += dealToEnemy(run, combat, target, nums.damage, hits, doubleHit, killed, damageTo);
     }
+  }
+
+  if (d.special === "bloodPrice" && target && target.hp > 0) {
+    const dmg = (nums.bonus ?? 4) * combat.bloodSpentTurn;
+    if (dmg > 0) drained += dealToEnemy(run, combat, target, dmg, 1, doubleHit, killed, damageTo);
+  }
+  if (d.special === "bloodReckoning") {
+    run.hp = Math.min(run.maxHp, run.hp + (nums.heal ?? 5));
+    const dmg = combat.bloodSpentBattle;
+    if (dmg > 0) {
+      for (const e of combat.enemies.filter((en) => en.hp > 0)) {
+        drained += dealToEnemy(run, combat, e, dmg, 1, doubleHit, killed, damageTo);
+      }
+    }
+  }
+  if (d.special === "leech") {
+    combat.leech += 1;
+    combat.leechDrain = Math.max(combat.leechDrain, nums.heal ?? 2);
   }
 
   if (d.type === "attack") combat.attacksPlayed += 1;
@@ -329,6 +481,94 @@ export function playCard(
   }
   if (d.special === "disarm" && target && nums.strength) {
     target.strength += nums.strength;
+  }
+
+  const statusTargets =
+    d.target === "all" ? combat.enemies.filter((en) => en.hp > 0) : target ? [target] : [];
+  if (d.special !== "envenom" && d.special !== "afterburn") {
+    for (const t of statusTargets) {
+      if (nums.toxin) t.toxin += nums.toxin;
+      if (nums.cinder) t.cinder += nums.cinder;
+      if (nums.daze) t.daze += nums.daze;
+    }
+  }
+  if (d.type === "attack" && combat.envenom) {
+    for (const t of statusTargets) t.toxin += combat.envenom;
+  }
+  if (d.special === "envenom") combat.envenom += nums.toxin ?? 2;
+  if (d.special === "afterburn") combat.afterburn += nums.cinder ?? 2;
+  if (d.special === "cinderBonus" && target && target.hp > 0 && target.cinder > 0) {
+    dealToEnemy(run, combat, target, nums.damage ?? 8, 1, doubleHit, killed, damageTo);
+  }
+  if (d.special === "execute" && target && killed.includes(target.id) && nums.heal) {
+    run.hp = Math.min(run.maxHp, run.hp + nums.heal);
+  }
+
+  if (d.special === "shieldBash") {
+    const foe = randomLiving(combat, rng);
+    if (foe && combat.blockGainedThisTurn > 0) {
+      dealToEnemy(run, combat, foe, nums.bonus ?? 3, 1, false, killed, damageTo);
+    }
+  }
+  if (d.special === "overhead" && target && target.hp > 0 && target.weak > 0) {
+    dealToEnemy(run, combat, target, nums.bonus ?? 6, 1, doubleHit, killed, damageTo);
+  }
+  if (d.special === "backstep" && target && target.hp > 0 && combat.block > 0) {
+    dealToEnemy(run, combat, target, nums.bonus ?? 3, 1, doubleHit, killed, damageTo);
+  }
+  if (d.special === "bastion") combat.bastion += nums.bonus ?? 1;
+  if (d.special === "counterfeit" && energyBefore === 0 && nums.hpLoss) {
+    playerHurt += loseHp(run, combat, nums.hpLoss);
+  }
+  if (d.special === "coinFlip" && rng.chance(0.5) && nums.dexterity) {
+    combat.dexterity += nums.dexterity;
+  }
+  if (d.special === "smoke") combat.smokeMirrors += nums.bonus ?? 2;
+  if (d.special === "prism") combat.prismPulse += nums.plasma ?? 4;
+  if (d.special === "reboot") {
+    if (combat.focus <= 0) combat.focus += nums.focus ?? 1;
+    else if (nums.energy) combat.energy = Math.min(combat.maxEnergy, combat.energy + nums.energy);
+  }
+  if (d.special === "voltage" && target && killed.includes(target.id)) {
+    combat.strength += nums.strength ?? 1;
+    combat.focus += nums.focus ?? 1;
+  }
+  if (d.special === "overheat") {
+    combat.overheatPlasma += nums.plasma ?? 1;
+    combat.overheatNeed = nums.threshold ?? 3;
+  }
+  if (d.special === "spendArcana" && target && target.hp > 0 && combat.arcana >= 3) {
+    combat.arcana -= 3;
+    dealToEnemy(run, combat, target, nums.bonus ?? 12, 1, doubleHit, killed, damageTo);
+  }
+  if (d.special === "discharge") {
+    const stacks = combat.arcana;
+    combat.arcana = 0;
+    const per = nums.damage ?? 5;
+    if (stacks > 0) {
+      for (const e of combat.enemies.filter((en) => en.hp > 0)) {
+        dealToEnemy(run, combat, e, per * stacks, 1, false, killed, damageTo);
+      }
+    }
+  }
+  if (d.special === "thunderArcana" && combat.arcana >= 2) combat.energy += 1;
+  if (d.special === "iceLance" && target && combat.arcana >= 2) target.daze += nums.daze ?? 1;
+  if (d.special === "sage") combat.sage = true;
+  if (d.special === "hunger") combat.hunger += nums.heal ?? 1;
+  if (nums.arcana) combat.arcana = Math.min(9, combat.arcana + nums.arcana);
+  if (combat.sage && d.type === "skill" && d.special !== "sage") {
+    combat.arcana = Math.min(9, combat.arcana + 1);
+  }
+
+  if (d.type === "attack" && combat.smokeMirrors > 0) {
+    gainBlock(combat, calcBlock(combat.smokeMirrors, combat.dexterity, combat.frail));
+  }
+  if (d.type === "attack" && combat.prismPulse > 0 && !combat.prismUsed) {
+    const foe = randomLiving(combat, rng);
+    if (foe) {
+      combat.prismUsed = true;
+      dealToEnemy(run, combat, foe, combat.prismPulse + combat.focus, 1, false, killed, damageTo);
+    }
   }
 
   if (d.special === "entrench") {
@@ -348,10 +588,53 @@ export function playCard(
     if (ex) combat.exhaustPile.push(ex);
   }
 
+  const extra = nums.stageBonus ?? 0;
+  let fam: FamiliarPulse | null = null;
+  if (d.summon === "twin") {
+    fam = callMany(run, combat, rng, ["ember", "rime"], extra);
+  } else if (d.summon === "all") {
+    fam = callMany(run, combat, rng, ["ember", "rime", "gloom", "spark"], extra);
+  } else if (d.summon) {
+    fam = callFamiliar(run, combat, rng, d.summon as FamiliarKind, extra);
+  } else if (d.special === "evokeLeft") {
+    fam = evokeLeft(run, combat, rng);
+  } else if (d.special === "pulseFamiliars") {
+    fam = pulseAll(run, combat, rng);
+  } else if (d.special === "evolveAll") {
+    fam = evolveAll(combat);
+  } else if (d.special === "channelSpark") {
+    const times = nums.stageBonus ?? 2;
+    let acc = emptyPulse();
+    for (let i = 0; i < times; i++) acc = merge(acc, callFamiliar(run, combat, rng, "spark", 0));
+    fam = acc;
+    const foe = randomLiving(combat, rng);
+    if (foe) dealToEnemy(run, combat, foe, nums.bonus ?? 2, 1, false, killed, damageTo);
+  } else if (d.special === "extraSlot") {
+    combat.familiarSlots += extra || 1;
+    note(combat, "A new kennel opens.");
+  }
+  if (fam) {
+    killed.push(...fam.killed);
+    damageTo.push(...fam.damageTo);
+  }
+  if (d.special === "pulseFamiliars" && combat.afterburn) {
+    for (const e of combat.enemies) if (e.hp > 0) e.cinder += combat.afterburn;
+  }
+
+  if (d.special === "lastWord" && target && killed.includes(target.id)) {
+    combat.energy += 2;
+  }
+
   const exhaust =
     d.type === "power" || (d.special === "limitBreak" ? !card.upgraded : Boolean(d.exhaust));
   if (exhaust) combat.exhaustPile.push(card);
   else combat.discardPile.push(card);
+
+  if (d.special === "discardRand" && combat.hand.length) {
+    const i = rng.int(0, combat.hand.length - 1);
+    const [disc] = combat.hand.splice(i, 1);
+    if (disc) combat.discardPile.push(disc);
+  }
 
   if (nums.draw) drawCards(combat, rng, nums.draw);
 
@@ -361,15 +644,59 @@ export function playCard(
     if (disc) combat.discardPile.push(disc);
   }
 
+  if (d.special === "reprise" && combat.discardPile.length) {
+    const i = rng.int(0, combat.discardPile.length - 1);
+    const [back] = combat.discardPile.splice(i, 1);
+    if (back) combat.hand.push(back);
+  }
+
+  if (d.special === "handUpgrade") {
+    const candidates = combat.hand.filter((c) => !c.upgraded && defOf(c).rarity !== "status");
+    if (candidates.length) {
+      rng.pick(candidates).upgraded = true;
+    }
+  }
+
   if (d.special === "battleTrance") combat.noDraw = true;
 
+  if (d.special === "feast" && drained > 0) {
+    run.hp = Math.min(run.maxHp, run.hp + drained);
+  }
+  if (d.special === "drainAll") {
+    const n = new Set(damageTo.map((x) => x.id)).size;
+    if (n > 0) run.hp = Math.min(run.maxHp, run.hp + n * (nums.heal ?? 1));
+  } else if (
+    nums.heal &&
+    d.special !== "feast" &&
+    d.special !== "execute" &&
+    d.special !== "hunger" &&
+    d.special !== "bloodReckoning" &&
+    d.special !== "leech"
+  ) {
+    run.hp = Math.min(run.maxHp, run.hp + nums.heal);
+  }
+  if (combat.hunger > 0 && d.type === "attack") {
+    run.hp = Math.min(run.maxHp, run.hp + combat.hunger);
+  }
+
   if (run.hp <= 0 && tryFairy(run)) {
-    combat.log = "The fairy shatters. You remain.";
+    note(combat, "The fairy shatters. You remain.");
   }
 
   const won = combat.enemies.every((e) => e.hp <= 0);
   const dead = run.hp <= 0;
-  combat.log = d.name;
+  if (!fam && d.special !== "extraSlot") {
+    const bits = [`You play ${d.name}.`];
+    if (playerHurt) bits.push(`Spend ${playerHurt} HP.`);
+    for (const hit of damageTo) {
+      const foe = combat.enemies.find((e) => e.id === hit.id);
+      bits.push(`${foe?.name ?? "A foe"} takes ${hit.amount}.`);
+    }
+    if (killed.length) bits.push(killed.length === 1 ? "A foe falls." : `${killed.length} foes fall.`);
+    note(combat, bits.join(" "));
+  } else if (fam?.log) {
+    note(combat, fam.log);
+  }
   if (won) combat.phase = "resolving";
   return { run, combat, killed, damageTo, playerHurt, needTarget: false, dead, won };
 }
@@ -410,24 +737,32 @@ export function usePotion(
     const amt = Math.ceil(run.maxHp * 0.2);
     run.hp = Math.min(run.maxHp, run.hp + amt);
     combat.log = `Healed ${amt}.`;
+    note(combat, `Potion: heal ${amt}.`);
   } else if (id === "block") {
-    combat.block += 12;
+    gainBlock(combat, 12);
     combat.log = "Gained 12 Block.";
+    note(combat, "Potion: +12 Block.");
   } else if (id === "fire") {
     const t = combat.enemies.find((e) => e.id === targetId && e.hp > 0);
-    if (t) hitEnemy(run, combat, t, 20, killed, damageTo);
+    if (t) {
+      hitEnemy(run, combat, t, 20, killed, damageTo);
+      note(combat, `Fire potion hits ${t.name} for 20.`);
+    }
   } else if (id === "str") {
     combat.strength += 2;
+    note(combat, "Potion: +2 Strength.");
   } else if (id === "energy") {
     combat.energy += 2;
+    note(combat, "Potion: +2 Energy.");
   } else if (id === "swift") {
     drawCards(combat, rng, 3);
+    note(combat, "Potion: draw 3.");
   }
   const won = combat.enemies.every((e) => e.hp <= 0);
   return { run, combat, killed, damageTo, playerHurt: 0, needTarget: false, dead: false, won };
 }
 
-export function endPlayerTurn(run: RunState, combat: CombatState, rng: Rng) {
+export function endPlayerTurn(run: RunState, combat: CombatState, rng: Rng): FamiliarPulse {
   combat.targetingUid = null;
   combat.targetingPotion = null;
   const keep: CardInst[] = [];
@@ -437,14 +772,82 @@ export function endPlayerTurn(run: RunState, combat: CombatState, rng: Rng) {
     else combat.discardPile.push(c);
   }
   combat.hand = keep;
-  if (hasRelic(run, "orichalcum") && combat.block === 0) combat.block += 6;
+  const pulse = combat.familiars.length
+    ? pulseAll(run, combat, rng)
+    : { damageTo: [], killed: [], blockGained: 0, log: "" };
+  if (combat.afterburn) {
+    for (const e of combat.enemies) if (e.hp > 0) e.cinder += combat.afterburn;
+  }
+  if (combat.leech > 0) {
+    const sip = combat.leechDrain || 2;
+    for (let i = 0; i < combat.leech; i++) {
+      const foe = randomLiving(combat, rng);
+      if (!foe) break;
+      const res = applyHpDamage(foe.hp, foe.block, sip);
+      foe.hp = res.hp;
+      foe.block = res.block;
+      run.damageDealt += sip;
+      pulse.damageTo.push({ id: foe.id, amount: sip });
+      if (foe.hp <= 0) {
+        foe.hp = 0;
+        foe.block = 0;
+        pulse.killed.push(foe.id);
+        run.floorKills += 1;
+      }
+      run.hp = Math.min(run.maxHp, run.hp + sip);
+      note(combat, `Leech drinks ${sip} from ${foe.name}.`);
+    }
+  }
+  for (const e of combat.enemies) {
+    if (e.hp <= 0 || e.cinder <= 0) continue;
+    const amt = e.cinder;
+    e.cinder -= 1;
+    const res = applyHpDamage(e.hp, 0, amt);
+    e.hp = res.hp;
+    run.damageDealt += amt;
+    pulse.damageTo.push({ id: e.id, amount: amt });
+    if (e.hp <= 0) {
+      e.hp = 0;
+      e.block = 0;
+      pulse.killed.push(e.id);
+      run.floorKills += 1;
+    }
+  }
+  if (hasRelic(run, "orichalcum") && combat.block === 0) gainBlock(combat, 6);
+  if (combat.overheatNeed > 0 && combat.cardsPlayed >= combat.overheatNeed) {
+    const foe = randomLiving(combat, rng);
+    if (foe) {
+      const amt = 12 + combat.focus;
+      const res = applyHpDamage(foe.hp, foe.block, amt);
+      foe.hp = res.hp;
+      foe.block = res.block;
+      run.damageDealt += amt;
+      pulse.damageTo.push({ id: foe.id, amount: amt });
+      if (foe.hp <= 0) {
+        foe.hp = 0;
+        foe.block = 0;
+        pulse.killed.push(foe.id);
+        run.floorKills += 1;
+      }
+    }
+  }
+  combat.smokeMirrors = 0;
+  combat.prismUsed = false;
+  combat.cardsPlayed = 0;
+  combat.blockGainedThisTurn = 0;
+  combat.bloodSpentTurn = 0;
+  combat.toxinApplied = false;
+  combat.cinderApplied = false;
   if (combat.weak > 0) combat.weak -= 1;
   if (combat.vulnerable > 0) combat.vulnerable -= 1;
   if (combat.frail > 0) combat.frail -= 1;
   combat.noDraw = false;
-  combat.phase = "enemy";
-  combat.log = "They move.";
+  const won = combat.enemies.every((e) => e.hp <= 0);
+  combat.phase = won ? "resolving" : "enemy";
+  if (!pulse.log) note(combat, "They move.");
+  else note(combat, pulse.log);
   persistRng(run, rng);
+  return pulse;
 }
 
 export interface EnemyStepResult {
@@ -468,6 +871,34 @@ export function stepEnemy(
   let blocked = 0;
   const intent = enemy.intent;
   const str = enemy.strength;
+
+  if (enemy.toxin > 0) {
+    const amt = enemy.toxin;
+    enemy.toxin -= 1;
+    const res = applyHpDamage(enemy.hp, 0, amt);
+    enemy.hp = res.hp;
+    run.damageDealt += amt;
+    if (enemy.hp <= 0) {
+      enemy.hp = 0;
+      run.floorKills += 1;
+      if (enemy.weak > 0) enemy.weak -= 1;
+      if (enemy.vulnerable > 0) enemy.vulnerable -= 1;
+      enemy.intent = nextIntent(enemy, Math.max(0, run.row), run.act ?? 1);
+      persistRng(run, rng);
+      note(combat, `${enemy.name} bleeds ${amt} Toxin.`);
+      return { run, combat, playerHurt: 0, blocked: 0, dead: false, enemyId: enemy.id, kind: "toxin" };
+    }
+  }
+
+  if (enemy.daze > 0) {
+    enemy.daze -= 1;
+    if (enemy.weak > 0) enemy.weak -= 1;
+    if (enemy.vulnerable > 0) enemy.vulnerable -= 1;
+    enemy.intent = nextIntent(enemy, Math.max(0, run.row), run.act ?? 1);
+    persistRng(run, rng);
+    note(combat, `${enemy.name} is dazed and skips.`);
+    return { run, combat, playerHurt: 0, blocked: 0, dead: false, enemyId: enemy.id, kind: "daze" };
+  }
 
   const attackOnce = (base: number) => {
     let d = base + str;
@@ -502,19 +933,50 @@ export function stepEnemy(
   } else if (intent.kind === "debuff") {
     if (intent.weak) combat.weak += intent.weak;
     if (intent.vulnerable) combat.vulnerable += intent.vulnerable;
+    if (intent.daze) applyEnemyDaze(combat, enemy, intent.daze);
   } else if (intent.kind === "attackDefend") {
     attackOnce(intent.dmg);
     enemy.block += intent.block;
+  } else if (intent.kind === "toxin") {
+    applyEnemyToxin(combat);
+  } else if (intent.kind === "cinder") {
+    applyEnemyCinder(combat);
+  } else if (intent.kind === "attackToxin") {
+    attackOnce(intent.dmg);
+    applyEnemyToxin(combat);
+  } else if (intent.kind === "attackCinder") {
+    attackOnce(intent.dmg);
+    applyEnemyCinder(combat);
+  } else if (intent.kind === "daze") {
+    applyEnemyDaze(combat, enemy, intent.daze);
   }
 
   if (enemy.weak > 0) enemy.weak -= 1;
   if (enemy.vulnerable > 0) enemy.vulnerable -= 1;
-  enemy.intent = nextIntent(enemy, Math.max(0, run.row));
+  enemy.intent = nextIntent(enemy, Math.max(0, run.row), run.act ?? 1);
 
   if (run.hp <= 0 && tryFairy(run)) {
-    combat.log = "The fairy shatters. You remain.";
+    note(combat, "The fairy shatters. You remain.");
   }
   const dead = run.hp <= 0;
+  if (intent.kind === "attack" || intent.kind === "attackDefend" || intent.kind === "attackToxin" || intent.kind === "attackCinder") {
+    const bits = [`${enemy.name} strikes.`];
+    if (playerHurt) bits.push(`You take ${playerHurt}.`);
+    if (blocked) bits.push(`${blocked} blocked.`);
+    note(combat, bits.join(" "));
+  } else if (intent.kind === "defend") {
+    note(combat, `${enemy.name} guards (+${intent.block} Block).`);
+  } else if (intent.kind === "buff") {
+    note(combat, `${enemy.name} grows stronger.`);
+  } else if (intent.kind === "debuff") {
+    note(combat, `${enemy.name} hexes you.`);
+  } else if (intent.kind === "toxin") {
+    note(combat, `${enemy.name} applies Toxin.`);
+  } else if (intent.kind === "cinder") {
+    note(combat, `${enemy.name} applies Cinder.`);
+  } else if (intent.kind === "daze") {
+    note(combat, `${enemy.name} dazes you.`);
+  }
   persistRng(run, rng);
   return { run, combat, playerHurt, blocked, dead, enemyId: enemy.id, kind: intent.kind };
 }
@@ -522,8 +984,23 @@ export function stepEnemy(
 export function beginPlayerTurn(run: RunState, combat: CombatState, rng: Rng) {
   combat.turn += 1;
   combat.block = 0;
-  combat.block += combat.metallicize;
+  if (combat.metallicize) gainBlock(combat, combat.metallicize);
   combat.energy = combat.maxEnergy;
+  if (hasRelic(run, "star_crystal")) combat.arcana = Math.min(9, combat.arcana + 1);
+  if (combat.daze > 0) {
+    combat.energy = Math.max(0, combat.energy - 1);
+    combat.daze -= 1;
+  }
+  if (combat.toxin > 0) {
+    const amt = combat.toxin;
+    combat.toxin -= 1;
+    loseHp(run, combat, amt);
+  }
+  if (combat.cinder > 0) {
+    const amt = combat.cinder;
+    combat.cinder -= 1;
+    loseHp(run, combat, amt);
+  }
   combat.noDraw = false;
   combat.phase = "player";
   combat.targetingUid = null;
@@ -542,8 +1019,9 @@ export function beginPlayerTurn(run: RunState, combat: CombatState, rng: Rng) {
       }
     }
     combat.log = "The calendar strikes.";
+    note(combat, "The calendar strikes.");
   } else {
-    combat.log = `Turn ${combat.turn}.`;
+    note(combat, `Turn ${combat.turn}.`);
   }
   persistRng(run, rng);
 }
@@ -555,11 +1033,27 @@ export function liveNumbers(run: RunState, combat: CombatState, card: CardInst):
   const vuln = living.length === 1 ? living[0]!.vulnerable : 0;
   const doubleHit =
     d.type === "attack" && hasRelic(run, "pen_nib") && (combat.attacksPlayed + 1) % 10 === 0;
-  if (n.damage) {
+  if (d.special === "discharge" && n.damage) {
+    n.damage = n.damage * Math.max(0, combat.arcana);
+  } else if (d.special === "bloodPrice") {
+    n.damage = calcDamage(
+      (n.bonus ?? 4) * combat.bloodSpentTurn,
+      playerStr(run, combat),
+      combat.weak,
+      vuln,
+      doubleHit,
+    );
+  } else if (d.special === "bloodReckoning") {
+    n.damage = calcDamage(combat.bloodSpentBattle, playerStr(run, combat), combat.weak, vuln, doubleHit);
+  } else if (n.damage) {
     n.damage = calcDamage(n.damage, playerStr(run, combat), combat.weak, vuln, doubleHit);
+  }
+  if (d.special === "spendArcana" && n.bonus && combat.arcana >= 3) {
+    n.damage = (n.damage ?? 0) + n.bonus;
   }
   if (n.block) {
     n.block = calcBlock(n.block, combat.dexterity, combat.frail);
+    if (combat.bastion > 0) n.block += combat.bastion;
   }
   return n;
 }
@@ -572,7 +1066,7 @@ export function afterCombat(run: RunState, rng: Rng, type: NodeType): RewardStat
     type === "boss" ? rng.int(80, 110) : type === "elite" ? rng.int(28, 42) : rng.int(12, 22);
   run.gold += gold;
   const bias = type === "boss" ? "boss" : type === "elite" ? "elite" : "normal";
-  const cards = rollCardRewards(rng, bias);
+  const cards = rollCardRewards(rng, bias, 3, run.classId);
   let relic: string | null = null;
   if (type === "elite" || type === "boss") relic = rollRelic(rng, run.relics);
   let potion: string | null = null;
@@ -639,7 +1133,7 @@ export function removeCard(run: RunState, uid: string): boolean {
 }
 
 export function generateShop(run: RunState, rng: Rng): ShopState {
-  const cards = rollCardRewards(rng, "normal", 3).map((card) => ({
+  const cards = rollCardRewards(rng, "normal", 3, run.classId).map((card) => ({
     item: card,
     price: priceFor(CARD_BY_ID[card.defId]!.rarity, rng),
     sold: false,

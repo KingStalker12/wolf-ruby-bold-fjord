@@ -3,16 +3,18 @@ import { Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CardView } from "./CardView";
 import { defOf } from "@/lib/game/cards";
+import { CLASSES, CLASS_BY_ID } from "@/lib/game/characters";
 import { EVENT_BY_ID } from "@/lib/game/events";
 import { POTION_BY_ID, RELIC_BY_ID } from "@/lib/game/items";
 import { loadRun } from "@/lib/game/save";
 import { useGame } from "@/lib/game/store";
 import { unlockAudio } from "@/lib/game/audio";
+import { runDepth } from "@/lib/game/engine";
 import { cn } from "@/lib/utils";
 
 export function TitleScreen() {
   const meta = useGame((s) => s.meta);
-  const newDescent = useGame((s) => s.newDescent);
+  const openSelect = useGame((s) => s.openSelect);
   const continueRun = useGame((s) => s.continueRun);
   const setScreen = useGame((s) => s.setScreen);
   const toggleMute = useGame((s) => s.toggleMute);
@@ -25,7 +27,9 @@ export function TitleScreen() {
   return (
     <div className="min-h-dvh bg-bg text-fg flex flex-col items-center justify-center px-6 py-10 relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
-        <img src="/game/chamber.jpg" alt="" className="size-full object-cover opacity-50" />
+        {!meta.plain && (
+          <img src="/game/chamber.jpg" alt="" className="size-full object-cover opacity-50" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/80 to-bg/50" />
       </div>
       <div className="relative flex flex-col items-center">
@@ -34,11 +38,12 @@ export function TitleScreen() {
           Sepulcher
         </h1>
         <p className="mt-3 max-w-sm text-center text-muted text-pretty leading-relaxed">
-          A roguelike deckbuilder. Descend the sealed tomb, play your rites, and do not look back.
+          A roguelike deckbuilder. Form a party of one, play your spells and
+          steel, and do not look back.
         </p>
         <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
-          <Button size="lg" className="w-full" onClick={newDescent}>
-            Descend
+          <Button size="lg" className="w-full" onClick={openSelect}>
+            New Game
           </Button>
           {hasSave && (
             <Button size="lg" variant="secondary" className="w-full" onClick={continueRun}>
@@ -71,6 +76,64 @@ export function TitleScreen() {
   );
 }
 
+export function SelectScreen() {
+  const beginRun = useGame((s) => s.beginRun);
+  const setScreen = useGame((s) => s.setScreen);
+  const plain = useGame((s) => s.meta.plain);
+
+  return (
+    <div className="min-h-dvh bg-bg text-fg flex flex-col items-center px-4 py-8 sm:py-12 relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        {!plain && (
+          <img src="/game/chamber.jpg" alt="" className="size-full object-cover opacity-40" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/80 to-bg/50" />
+      </div>
+      <div className="relative w-full max-w-5xl">
+        <p className="text-center text-xs uppercase tracking-[0.2em] text-accent">Choose a hero</p>
+        <h1 className="mt-2 font-display text-3xl sm:text-4xl text-center">The party</h1>
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {CLASSES.map((cls) => {
+            const relic = RELIC_BY_ID[cls.relic];
+            return (
+              <button
+                key={cls.id}
+                type="button"
+                onClick={() => beginRun(cls.id)}
+                className="text-left rounded-lg jrpg-panel bg-surface/90 overflow-hidden hover:brightness-110 transition-[filter] duration-(--motion-fast) ease-(--ease-out)"
+              >
+                <div className="h-40 sm:h-44 overflow-hidden bg-elevated flex items-center justify-center">
+                  {plain ? (
+                    <p className="font-display text-4xl text-muted">{cls.name.replace("The ", "").slice(0, 1)}</p>
+                  ) : (
+                    <img src={cls.portrait} alt="" className="size-full object-cover" />
+                  )}
+                </div>
+                <div className="p-4">
+                  <p className="font-display text-2xl">{cls.name}</p>
+                  <p className="mt-1 text-sm text-muted leading-relaxed text-pretty">{cls.blurb}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular-nums">
+                    <dt className="text-muted">Life</dt>
+                    <dd>{cls.hp}</dd>
+                    <dt className="text-muted">Relic</dt>
+                    <dd>{relic?.name}</dd>
+                  </dl>
+                  <p className="mt-2 text-xs text-subtle leading-relaxed">{relic?.text}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-6 flex justify-center">
+          <Button variant="ghost" onClick={() => setScreen("title")}>
+            Return
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function HowToScreen() {
   const setScreen = useGame((s) => s.setScreen);
   const run = useGame((s) => s.run);
@@ -80,8 +143,27 @@ export function HowToScreen() {
         <h1 className="font-display text-3xl">How to play</h1>
         <ol className="mt-6 space-y-5 text-sm text-muted leading-relaxed">
           <li>
+            <span className="text-fg font-medium">Names.</span> The Interred heals after each fight.
+            The Veil starts every combat with Dexterity and stacks Toxin and Daze.
+            The Kindled calls familiars that pulse at the end of your turn — play the same Call
+            to Evolve them I→II→III, then Surge. Kindled also applies Cinder, which burns at
+            the end of your turn. The Mage banks Arcana with spells, then spends it on Fireball,
+            Thunder, and Discharge. The Vampire spends HP to strike: Bite heals, Drain sips from
+            every foe, and Blood Shield (with the Chalice) turns wounds into Block.
+            Blood Tithe hits harder the more HP you spent this turn; Crimson Requiem
+            spends the whole fight's blood on every foe.
+            Reward piles can also show Nameless rites, usable by any hero.
+            A picture button in the corner hides portraits if you need a quieter table.
+            Closing or refreshing the page returns you to the last landing.
+          </li>
+          <li>
             <span className="text-fg font-medium">Energy and rites.</span> Each turn you have three
             energy. Play cards from your hand to spend it. Attacks deal damage; skills gain Block.
+          </li>
+          <li>
+            <span className="text-fg font-medium">Statuses.</span> Toxin ticks at the start of
+            a turn, then falls by 1. Cinder burns at the end of your turn. Daze makes an enemy
+            skip its next action, or costs you 1 Energy.
           </li>
           <li>
             <span className="text-fg font-medium">Intents.</span> Enemies show their next action
@@ -90,11 +172,14 @@ export function HowToScreen() {
           </li>
           <li>
             <span className="text-fg font-medium">The map.</span> After each chamber, choose a path:
-            fights, elites, a merchant, a rest, or an unknown. The Pale Warden waits at the bottom.
+            fights, elites, a merchant, a rest, or an unknown. Twelve landings to a seal.
+            Unknowns do not repeat in a run — each is a different chamber with three choices.
+            The Pale Warden waits at the bottom of the first map. Defeat it, and a second seal
+            opens — The Ember Crown waits there.
           </li>
           <li>
-            <span className="text-fg font-medium">Relics.</span> Permanent gifts. Elites and the
-            Warden drop them. Rest to heal or upgrade a card.
+            <span className="text-fg font-medium">Relics.</span> Permanent gifts. Elites and bosses
+            drop them. Rest to heal or upgrade a card.
           </li>
           <li>
             <span className="text-fg font-medium">Keys.</span> 1–9 play cards in hand. E or Enter
@@ -386,12 +471,15 @@ export function PickerScreen() {
 
 export function EndScreen({ win }: { win: boolean }) {
   const run = useGame((s) => s.run);
-  const newDescent = useGame((s) => s.newDescent);
+  const openSelect = useGame((s) => s.openSelect);
   const setScreen = useGame((s) => s.setScreen);
+  const plain = useGame((s) => s.meta.plain);
   return (
     <div className="min-h-dvh bg-bg text-fg flex flex-col items-center justify-center px-6 py-10 relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
-        <img src="/game/chamber.jpg" alt="" className="size-full object-cover opacity-40" />
+        {!plain && (
+          <img src="/game/chamber.jpg" alt="" className="size-full object-cover opacity-40" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/85 to-bg/55" />
       </div>
       <div className="relative flex flex-col items-center">
@@ -400,13 +488,15 @@ export function EndScreen({ win }: { win: boolean }) {
         </h1>
         <p className="mt-3 max-w-sm text-center text-muted text-pretty">
           {win
-            ? "The Pale Warden falls. Your name holds. For now."
+            ? "The Ember Crown falls. Both seals are quiet. Your name holds. For now."
             : "The well keeps what it is given."}
         </p>
         {run && (
           <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-2 text-sm tabular-nums">
+            <dt className="text-muted">Name</dt>
+            <dd>{CLASS_BY_ID[run.classId]?.name ?? "The Interred"}</dd>
             <dt className="text-muted">Depth</dt>
-            <dd>{run.row + 1}</dd>
+            <dd>{runDepth(run)}</dd>
             <dt className="text-muted">Gold</dt>
             <dd>{run.gold}</dd>
             <dt className="text-muted">Relics</dt>
@@ -418,7 +508,7 @@ export function EndScreen({ win }: { win: boolean }) {
           </dl>
         )}
         <div className="mt-10 flex w-full max-w-xs flex-col gap-3">
-          <Button size="lg" className="w-full" onClick={newDescent}>
+          <Button size="lg" className="w-full" onClick={openSelect}>
             Descend again
           </Button>
           <Button size="lg" variant="ghost" className="w-full" onClick={() => setScreen("title")}>
@@ -437,7 +527,9 @@ export function TopBar() {
   const meta = useGame((s) => s.meta);
   return (
     <header className="flex items-center gap-3 px-3 sm:px-5 py-2.5 border-b border-border bg-bg/90">
-      <p className="font-display text-lg tracking-tight">Sepulcher</p>
+      <p className="font-display text-lg tracking-tight">
+        {CLASS_BY_ID[run.classId]?.name ?? "Sepulcher"}
+      </p>
       <div className="ml-auto flex items-center gap-3 text-xs tabular-nums text-muted">
         <span>
           {run.hp}/{run.maxHp}
@@ -471,6 +563,7 @@ export function Overlays() {
   const meta = useGame((s) => s.meta);
   const toggleMute = useGame((s) => s.toggleMute);
   const toggleShake = useGame((s) => s.toggleShake);
+  const togglePlain = useGame((s) => s.togglePlain);
   const abandon = useGame((s) => s.abandon);
   const setScreen = useGame((s) => s.setScreen);
 
@@ -533,6 +626,9 @@ export function Overlays() {
             <Button variant="secondary" onClick={toggleShake}>
               {meta.shake ? "Shake on" : "Shake off"}
             </Button>
+            <Button variant="secondary" onClick={togglePlain}>
+              {meta.plain ? "Pictures hidden" : "Pictures shown"}
+            </Button>
             <Button
               variant="secondary"
               onClick={() => {
@@ -589,10 +685,9 @@ function Modal({
 
 function WellMark() {
   return (
-    <svg viewBox="0 0 80 48" className="w-24 text-fg/70" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden>
-      <path d="M8 44 V22 C8 10 20 4 40 4 C60 4 72 10 72 22 V44" />
-      <path d="M20 44 V26 C20 16 28 12 40 12 C52 12 60 16 60 26 V44" />
-      <path d="M32 44 V30 C32 24 36 22 40 22 C44 22 48 24 48 30 V44" />
+    <svg viewBox="0 0 80 48" className="w-24 text-accent" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden>
+      <path d="M40 4 L68 24 L40 44 L12 24 Z" />
+      <path d="M12 24 H68 M40 4 V44" />
     </svg>
   );
 }

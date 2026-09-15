@@ -3,9 +3,11 @@ import { ArrowDown, ArrowUp, Heart, Layers, Shield, Swords, Sparkles } from "luc
 import { CardView } from "./CardView";
 import { Button } from "@/components/ui/button";
 import { defOf } from "@/lib/game/cards";
+import { CLASS_BY_ID } from "@/lib/game/characters";
 import { canPlay, liveNumbers, playerStr } from "@/lib/game/engine";
 import { intentKind, intentLabel } from "@/lib/game/enemies";
 import { POTION_BY_ID } from "@/lib/game/items";
+import { FAMILIAR_ART, familiarEvokeHint, familiarName, familiarPassive } from "@/lib/game/familiars";
 import { useGame } from "@/lib/game/store";
 import type { EnemyInst, Intent, PileKind } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,17 @@ const PORTRAIT: Record<string, string> = {
   sentinel: "/game/sentinel.jpg",
   priest: "/game/priest.jpg",
   warden: "/game/warden.jpg",
+  cinder: "/game/cinder.jpg",
+  coil: "/game/coil.jpg",
+  paladin: "/game/paladin.jpg",
+  crown: "/game/crown.jpg",
+  lurker: "/game/lurker.jpg",
+  ghoul: "/game/ghoul.jpg",
+  ashrat: "/game/ashrat.jpg",
+  widow: "/game/widow.jpg",
+  howler: "/game/howler.jpg",
+  saint: "/game/saint.jpg",
+  wolf: "/game/wolf.jpg",
 };
 
 export function CombatScreen() {
@@ -33,6 +46,7 @@ export function CombatScreen() {
   const hint = useGame((s) => s.hint);
   const dismissHint = useGame((s) => s.dismissHint);
   const setInspect = useGame((s) => s.setInspect);
+  const plain = useGame((s) => s.meta.plain);
   const targeting = Boolean(combat.targetingUid) || combat.targetingPotion !== null;
   const locked = combat.phase !== "player";
 
@@ -58,7 +72,7 @@ export function CombatScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, [combat, endTurn, locked, play]);
 
-  const trauma = shake * shake;
+  const trauma = plain ? 0 : shake * shake;
   const ox = trauma ? (Math.random() * 2 - 1) * 10 * trauma : 0;
   const oy = trauma ? (Math.random() * 2 - 1) * 8 * trauma : 0;
   const str = playerStr(run, combat);
@@ -69,11 +83,13 @@ export function CombatScreen() {
       style={{ transform: `translate(${ox}px, ${oy}px)` }}
     >
       <div className="pointer-events-none absolute inset-0">
-        <img
-          src="/game/chamber.jpg"
-          alt=""
-          className="size-full object-cover opacity-45"
-        />
+        {!plain && (
+          <img
+            src="/game/chamber.jpg"
+            alt=""
+            className="size-full object-cover opacity-45"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/75 to-bg/35" />
       </div>
 
@@ -86,6 +102,7 @@ export function CombatScreen() {
             locked={locked}
             flashing={flashes.includes(e.id)}
             playerVuln={combat.vulnerable}
+            plain={plain}
             onClick={() => {
               if (locked) return;
               if (combat.targetingUid) play(combat.targetingUid, e.id);
@@ -96,16 +113,21 @@ export function CombatScreen() {
       </div>
 
       {floats.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 top-[18%] flex justify-center gap-8 z-10">
-          {floats.map((f) => (
+        <div className="pointer-events-none absolute inset-x-0 top-[22%] flex justify-center gap-6 z-20">
+          {floats.map((f, i) => (
             <span
               key={f.id}
               className={cn(
-                "font-display text-2xl tabular-nums animate-float-up",
+                "font-display text-4xl sm:text-5xl font-semibold tabular-nums animate-float-up",
                 f.color === "hp" && "text-hp",
                 f.color === "block" && "text-block",
-                f.color === "heal" && "text-fg",
+                f.color === "heal" && "text-heal",
+                f.color === "buff" && "text-accent",
               )}
+              style={{
+                textShadow: "0 2px 0 rgb(0 0 0 / 0.55), 0 8px 18px rgb(0 0 0 / 0.45)",
+                marginLeft: `${((i % 3) - 1) * 28}px`,
+              }}
             >
               {f.text}
             </span>
@@ -113,14 +135,96 @@ export function CombatScreen() {
         </div>
       )}
 
+      {(combat.journal?.length ?? 0) > 0 && (
+        <div className="pointer-events-none absolute left-2 top-2 z-20 w-[11.5rem] sm:w-60">
+          <div className="jrpg-panel bg-bg/85 px-2 py-1.5">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-accent mb-1">Battle log</p>
+            <ul className="space-y-0.5 max-h-24 sm:max-h-36 overflow-hidden">
+              {combat.journal.slice(0, 6).map((line, i) => (
+                <li
+                  key={`${i}-${line.slice(0, 12)}`}
+                  className={cn("text-[11px] leading-snug", i === 0 ? "text-fg" : "text-muted")}
+                >
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {combat.familiarSlots > 0 && (
+        <div className="relative px-3 pb-2">
+          <div className="mx-auto max-w-3xl flex justify-center gap-2">
+            {Array.from({ length: Math.max(0, combat.familiarSlots - combat.familiars.length) }, (_, i) => (
+              <div
+                key={`empty-${i}`}
+                className="size-14 sm:size-16 rounded-lg border border-dashed border-border bg-bg/50 shrink-0"
+                aria-label="Empty familiar slot"
+              />
+            ))}
+            {combat.familiars.map((f, i) => (
+              <div
+                key={`${f.kind}-${i}`}
+                className={cn(
+                  "w-20 sm:w-24 rounded-lg border bg-elevated/90 overflow-hidden shrink-0",
+                  f.stage >= 3 ? "border-accent ring-1 ring-accent/40" : "border-border",
+                )}
+                title={`${familiarPassive(f)} · ${familiarEvokeHint(f)}`}
+              >
+                <div className="h-12 sm:h-14 overflow-hidden bg-elevated flex items-center justify-center">
+                  {plain ? (
+                    <p className="font-display text-lg text-muted">{familiarName(f).slice(0, 1)}</p>
+                  ) : (
+                    <img
+                      src={FAMILIAR_ART[f.kind]}
+                      alt=""
+                      className="size-full object-cover"
+                      style={{ filter: f.stage === 1 ? "grayscale(0.35)" : f.stage === 2 ? "none" : "contrast(1.15) saturate(1.2)" }}
+                    />
+                  )}
+                </div>
+                <div className="px-1.5 py-1">
+                  <p className={cn("font-display text-xs leading-tight truncate", f.stage >= 3 && "text-accent")}>
+                    {familiarName(f)}
+                  </p>
+                  <p className="text-[9px] text-muted tabular-nums truncate">
+                    {f.stage >= 3 ? `III · Surge ready` : familiarPassive(f)}
+                  </p>
+                  <div className="mt-0.5 flex gap-0.5 items-center">
+                    {[1, 2, 3].map((s) => (
+                      <span
+                        key={s}
+                        className={cn(
+                          "rounded-full",
+                          s <= f.stage ? "bg-accent" : "bg-border",
+                          f.stage >= 3 ? "size-2" : "size-1.5",
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="relative px-3 pb-1">
         <div
           className={cn(
-            "mx-auto max-w-3xl rounded-lg border border-border bg-elevated/90 px-3 py-2",
+            "mx-auto max-w-3xl rounded-lg jrpg-panel bg-elevated/90 px-3 py-2",
             flashes.includes("player") && "hit-flash",
           )}
         >
           <div className="flex items-center gap-3">
+            {!plain && CLASS_BY_ID[run.classId] && (
+              <img
+                src={CLASS_BY_ID[run.classId].portrait}
+                alt=""
+                className="size-12 rounded-md object-cover border border-accent/40 shrink-0"
+              />
+            )}
             <Heart className="size-4 text-hp shrink-0" strokeWidth={1.75} />
             <div className="flex-1 min-w-0">
               <div className="flex justify-between text-xs tabular-nums mb-1">
@@ -145,10 +249,33 @@ export function CombatScreen() {
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] uppercase tracking-wider text-muted">
             {str !== 0 && <StatusChip>Str {str > 0 ? `+${str}` : str}</StatusChip>}
+            {combat.dexterity !== 0 && (
+              <StatusChip>Dex {combat.dexterity > 0 ? `+${combat.dexterity}` : combat.dexterity}</StatusChip>
+            )}
             {combat.weak > 0 && <StatusChip>Weak {combat.weak}</StatusChip>}
             {combat.vulnerable > 0 && <StatusChip>Vuln {combat.vulnerable}</StatusChip>}
             {combat.frail > 0 && <StatusChip>Frail {combat.frail}</StatusChip>}
             {combat.metallicize > 0 && <StatusChip>Metal {combat.metallicize}</StatusChip>}
+            {combat.toxin > 0 && <StatusChip>Toxin {combat.toxin}</StatusChip>}
+            {combat.cinder > 0 && <StatusChip>Cinder {combat.cinder}</StatusChip>}
+            {combat.daze > 0 && <StatusChip>Daze {combat.daze}</StatusChip>}
+            {combat.envenom > 0 && <StatusChip>Venom {combat.envenom}</StatusChip>}
+            {combat.afterburn > 0 && <StatusChip>Afterburn {combat.afterburn}</StatusChip>}
+            {combat.bastion > 0 && <StatusChip>Bastion {combat.bastion}</StatusChip>}
+            {combat.smokeMirrors > 0 && <StatusChip>Smoke {combat.smokeMirrors}</StatusChip>}
+            {combat.focus > 0 && <StatusChip>Focus {combat.focus}</StatusChip>}
+            {combat.plasma > 0 && <StatusChip>Plasma {combat.plasma}</StatusChip>}
+            {combat.prismPulse > 0 && <StatusChip>Prism {combat.prismPulse}</StatusChip>}
+            {combat.overheatPlasma > 0 && <StatusChip>Overheat {combat.overheatNeed}+</StatusChip>}
+            {combat.arcana > 0 && <StatusChip>Arcana {combat.arcana}</StatusChip>}
+            {combat.sage && <StatusChip>Sage</StatusChip>}
+            {combat.hunger > 0 && <StatusChip>Hunger {combat.hunger}</StatusChip>}
+            {(combat.bloodSpentTurn > 0 || combat.bloodSpentBattle > 0) && (
+              <StatusChip>
+                Blood {combat.bloodSpentTurn}/{combat.bloodSpentBattle}
+              </StatusChip>
+            )}
+            {combat.leech > 0 && <StatusChip>Leech {combat.leech}</StatusChip>}
             <span className="ml-auto normal-case tracking-normal text-subtle hidden sm:inline">
               {targeting ? "Choose a target" : combat.log}
             </span>
@@ -313,6 +440,7 @@ function EnemyPortrait({
   flashing,
   playerVuln,
   onClick,
+  plain,
 }: {
   enemy: EnemyInst;
   targeting: boolean;
@@ -320,10 +448,11 @@ function EnemyPortrait({
   flashing: boolean;
   playerVuln: number;
   onClick: () => void;
+  plain: boolean;
 }) {
   const dead = enemy.hp <= 0;
   const kind = intentKind(enemy.intent);
-  const boss = enemy.defId === "warden";
+  const boss = enemy.defId === "warden" || enemy.defId === "crown";
   const src = PORTRAIT[enemy.defId];
   return (
     <button
@@ -344,16 +473,21 @@ function EnemyPortrait({
       />
       <div
         className={cn(
-          "relative overflow-hidden rounded-md border border-border bg-elevated",
+          "relative overflow-hidden rounded-md border border-border bg-elevated flex items-center justify-center",
           boss ? "size-32 sm:size-44" : "size-28 sm:size-36",
           targeting && !dead && "ring-2 ring-accent",
           flashing && "hit-flash",
         )}
       >
-        {src ? (
+        {!plain && src ? (
           <img src={src} alt="" className="size-full object-cover" />
         ) : (
-          <div className="size-full bg-elevated" />
+          <p className="font-display text-3xl sm:text-4xl text-muted px-2 text-center leading-tight">
+            {enemy.name
+              .split(" ")
+              .map((w) => w[0])
+              .join("")}
+          </p>
         )}
       </div>
       <div className="w-full">
@@ -370,10 +504,13 @@ function EnemyPortrait({
             style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }}
           />
         </div>
-        <div className="mt-1 flex justify-center gap-1 text-[9px] uppercase tracking-wider text-muted">
+        <div className="mt-1 flex justify-center gap-1 text-[9px] uppercase tracking-wider text-muted flex-wrap">
           {enemy.strength !== 0 && <span>Str {enemy.strength}</span>}
           {enemy.weak > 0 && <span>Wk {enemy.weak}</span>}
           {enemy.vulnerable > 0 && <span>Vuln {enemy.vulnerable}</span>}
+          {enemy.toxin > 0 && <span>Tx {enemy.toxin}</span>}
+          {enemy.cinder > 0 && <span>Cn {enemy.cinder}</span>}
+          {enemy.daze > 0 && <span>Dz {enemy.daze}</span>}
         </div>
       </div>
     </button>

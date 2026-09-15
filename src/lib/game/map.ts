@@ -1,7 +1,7 @@
 import type { MapNode, NodeType } from "./types";
 import type { Rng } from "./rng";
 
-const ROWS: NodeType[][] = [
+const ACT1: NodeType[][] = [
   ["combat", "combat"],
   ["combat", "event", "combat"],
   ["combat", "shop", "combat"],
@@ -9,14 +9,34 @@ const ROWS: NodeType[][] = [
   ["rest"],
   ["combat", "event", "combat"],
   ["shop", "combat", "event"],
+  ["combat", "event", "combat"],
+  ["elite", "combat", "shop"],
+  ["combat", "event", "shop"],
   ["rest"],
   ["boss"],
 ];
 
-export function generateMap(rng: Rng): MapNode[] {
-  const rows: MapNode[][] = ROWS.map((types, row) =>
+const ACT2: NodeType[][] = [
+  ["combat", "combat", "combat"],
+  ["combat", "event", "combat", "shop"],
+  ["elite", "combat", "combat"],
+  ["combat", "event", "rest"],
+  ["shop", "elite", "combat"],
+  ["combat", "event", "combat"],
+  ["elite", "shop", "combat"],
+  ["combat", "event", "combat"],
+  ["shop", "elite", "event"],
+  ["combat", "combat", "shop"],
+  ["rest"],
+  ["boss"],
+];
+
+export function generateMap(rng: Rng, act = 1): MapNode[] {
+  const layout = act >= 2 ? ACT2 : ACT1;
+  const prefix = act >= 2 ? "b" : "n";
+  const rows: MapNode[][] = layout.map((types, row) =>
     types.map((type, col) => ({
-      id: `n${row}-${col}`,
+      id: `${prefix}${row}-${col}`,
       row,
       col,
       type,
@@ -33,8 +53,8 @@ export function generateMap(rng: Rng): MapNode[] {
       const ids = new Set<string>([nxt[j]!.id]);
       if (nxt[j - 1]) ids.add(nxt[j - 1]!.id);
       if (nxt[j + 1] && ids.size < 2) ids.add(nxt[j + 1]!.id);
-      if (rng.chance(0.35) && nxt[j + 1]) ids.add(nxt[j + 1]!.id);
-      if (rng.chance(0.35) && nxt[j - 1]) ids.add(nxt[j - 1]!.id);
+      if (rng.chance(0.55) && nxt[j + 1]) ids.add(nxt[j + 1]!.id);
+      if (rng.chance(0.4) && nxt[j - 1]) ids.add(nxt[j - 1]!.id);
       cur[i]!.next = [...ids];
     }
     const reached = new Set(cur.flatMap((n) => n.next));
@@ -78,3 +98,8 @@ export const NODE_LABEL: Record<NodeType, string> = {
   shop: "Merchant",
   boss: "Warden",
 };
+
+export function nodeLabel(type: NodeType, act = 1): string {
+  if (type === "boss") return act >= 2 ? "Crown" : "Warden";
+  return NODE_LABEL[type];
+}

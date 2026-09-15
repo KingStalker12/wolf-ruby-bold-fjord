@@ -2,8 +2,8 @@ import { i as __toESM, n as __exportAll } from "../_runtime.mjs";
 import { L as require_react, _ as useRouter, f as createRouter, g as createRootRoute, h as createFileRoute, l as Scripts, m as lazyRouteComponent, p as Outlet, u as HeadContent, v as require_jsx_runtime } from "../_libs/@tanstack/react-router+[...].mjs";
 import { r as TriangleAlert } from "../_libs/lucide-react.mjs";
 import { a as union, i as string, n as number, r as object, t as literal } from "../_libs/zod.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/router-tJ_b1ZyI.js
-var router_tJ_b1ZyI_exports = /* @__PURE__ */ __exportAll({ getRouter: () => getRouter });
+//#region node_modules/.nitro/vite/services/ssr/assets/router-DQ12r38k.js
+var router_DQ12r38k_exports = /* @__PURE__ */ __exportAll({ getRouter: () => getRouter });
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function AppErrorComponent({ error }) {
@@ -272,7 +272,7 @@ function PreviewHostBridge() {
 	}, [router]);
 	return null;
 }
-var styles_default = "/assets/styles-C2RQ2DCO.css";
+var styles_default = "/assets/styles-DMiQrYv7.css";
 var APP_NAME = "Sepulcher";
 var Route$1 = createRootRoute({
 	head: () => ({
@@ -285,11 +285,11 @@ var Route$1 = createRootRoute({
 			{ title: APP_NAME },
 			{
 				name: "description",
-				content: "A gothic roguelike deckbuilder. Descend the sealed tomb."
+				content: "A JRPG roguelike deckbuilder. Choose a hero and descend."
 			},
 			{
 				name: "theme-color",
-				content: "#0a0a0b"
+				content: "#0c1224"
 			}
 		],
 		links: [
@@ -321,7 +321,7 @@ var Route$1 = createRootRoute({
 			},
 			{
 				rel: "stylesheet",
-				href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Figtree:wght@400;500;600&display=swap"
+				href: "https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;1,400&display=swap"
 			}
 		]
 	}),
@@ -336,7 +336,7 @@ var Route$1 = createRootRoute({
 		] })]
 	})
 });
-var $$splitComponentImporter = () => import("./routes-CAcr5k_V.mjs");
+var $$splitComponentImporter = () => import("./routes-B-IUzVdg.mjs");
 var rootRouteChildren = { IndexRoute: createFileRoute("/")({ component: lazyRouteComponent($$splitComponentImporter, "component") }).update({
 	id: "/",
 	path: "/",
@@ -350,4 +350,4 @@ function getRouter() {
 	});
 }
 //#endregion
-export { getRouter, router_tJ_b1ZyI_exports as t };
+export { getRouter, router_DQ12r38k_exports as t };

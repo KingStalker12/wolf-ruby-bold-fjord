@@ -9,6 +9,30 @@ export const RELICS: RelicDef[] = [
     rarity: "starter",
   },
   {
+    id: "pale_shroud",
+    name: "Pale Shroud",
+    text: "Start each combat with 1 Dexterity.",
+    rarity: "starter",
+  },
+  {
+    id: "ash_locket",
+    name: "Ash Locket",
+    text: "Start each combat with a Spark in your rightmost slot.",
+    rarity: "starter",
+  },
+  {
+    id: "star_crystal",
+    name: "Star Crystal",
+    text: "At the start of your turn, gain 1 Arcana.",
+    rarity: "starter",
+  },
+  {
+    id: "crimson_chalice",
+    name: "Crimson Chalice",
+    text: "Whenever a card spends HP, gain 3 Block.",
+    rarity: "starter",
+  },
+  {
     id: "anchor",
     name: "Anchor",
     text: "Start each combat with 10 Block.",
